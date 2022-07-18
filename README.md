@@ -1,7 +1,7 @@
 # Clickhousy (php lib)
 High performance Clickhouse PHP library featuring:
-- parametric queries (safe sql execution)
-- long queries progress update through callback function
-- huge data inserts without memory overflow
-- HTTP compression for large datasets
-- curl based
+- Parametric queries (simple sql-injection protection).
+- Long queries progress update through callback function.
+- Huge datasets inserts without memory overflow.
+- HTTP compression for traffic reduction.
+- Curl based (shell curl command required for large inserts).
