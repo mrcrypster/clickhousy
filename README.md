@@ -1,6 +1,6 @@
 # Clickhousy (php lib)
 High performance Clickhouse PHP library featuring:
-- Tiny memory footprint based on static class
+- Tiny memory footprint based on static class (times better than [smi2 client]())
 - Parametric queries (simple sql-injection protection).
 - Long queries progress update through callback function.
 - Huge datasets inserts without memory overflow.
@@ -74,7 +74,7 @@ Though writing also happens somewhere else (not on PHP side), `Clickhousy` has s
 
 ```php
 $b = clickhousy::open_buffer('table');  # open insert buffer to insert data into "table" table
-                                        # buffer is a tmp file on disk, so memory leaks aren't possible
+                                        # buffer is a tmp file on disk, so no memory leaks
 
 for ( $k = 0; $k < 100; $k++ ) {        # repeat generation 100 times
   $rows = [];
@@ -217,3 +217,92 @@ Which will result in:
 83%
 94%
 ```
+
+
+## Query execution summary
+Latest query summary is available through:
+```php
+clickhousy::rows('SELECT * FROM numbers(100000)');
+print_r(clickhousy::last_summary());
+```
+Which is an associative array of multiple metrics:
+```
+Array
+(
+    [read_rows] => 65505
+    [read_bytes] => 524040
+    [written_rows] => 0
+    [written_bytes] => 0
+    [total_rows_to_read] => 100000
+)
+```
+
+
+## Errors handling and debug
+By default, `clickhousy` will return response with `error` key on error, but will not throw any exceptions:
+```php
+$response = clickhousy::query('SELECT bad_query');  # sample query with error
+print_r($response);
+```
+Which contains original Clickhouse error message:
+```
+Array
+(
+    [error] => Code: 47. DB::Exception: Missing columns: 'bad_query' while processing query: 'SELECT bad_query', required columns: 'bad_query'. (UNKNOWN_IDENTIFIER) (version 22.6.1.1696 (official build))
+
+)
+```
+
+If you want exceptions functionality, you can inherit your own class and override `error()` method:
+```php
+class my_clickhousy_exception extends Exception {};
+class my_clickhousy extends clickhousy {
+  public static function error($msg, $request_info) {
+    throw new my_clickhousy_exception($msg);
+  }
+}
+```
+
+And just use your own class:
+```php
+my_clickhousy::query('SELECT bad_query');   # bad query example
+# PHP Fatal error:  Uncaught my_clickhousy_exception: Code: 47. DB::Exception: Missing columns: 'bad_query' ...
+```
+
+
+### Debugging response
+If you need to access raw response from Clickhouse, you can find it here: 
+```php
+clickhouse::last_response();  # raw text response from Clickhouse after latest query
+```
+
+Curl (which is used for HTTP communication) resposne info can be accessed via:
+```php
+clickhouse::last_info();  # response from curl_getinfo() after latest query
+```
+
+
+### Logging
+There is also `log()` method which can be overrided to allow custom logging:
+```php
+class my_clickhousy extends clickhousy {
+  public static function log($raw_response, $curl_info) {
+    error_log('Received response from Clickhouse: ' . $raw_response);
+  }
+}
+```
+
+
+## Memory usage and performance
+Based on [performance testing](), `Clickhousy` lib is times faster
+and hundreds of times less memory consuming than [smi2 lib](https://github.com/smi2/phpClickHouse):
+
+```
+Smi2: 
+mem:                565       
+time:               10.3      
+
+Clickhousy: 
+mem:                0.8       688.8x  better
+time:               2.3       4.4x  better
+``` 

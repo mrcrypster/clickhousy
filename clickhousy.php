@@ -12,11 +12,11 @@ class clickhousy {
   /* Settings */
 
   public static function set_url($url) {
-    self::$url = $url;
+    static::$url = $url;
   }
 
   public static function set_db($db) {
-    self::$db = $db;
+    static::$db = $db;
   }
 
 
@@ -27,14 +27,17 @@ class clickhousy {
     $q = [
       'enable_http_compression' => 1,
       'send_progress_in_http_headers' => 1,
-      'query' => $sql
     ];
+
+    if ( $post_buffer ) {
+      $q['query'] = $sql;
+    }
 
     foreach ( $params as $k => $v ) {
       $q['param_' . $k] = $v;
     }
 
-    $endpoint = self::$url . '?' . http_build_query($q);
+    $endpoint = static::$url . '?' . http_build_query($q);
 
 
     if ( $post_buffer ) {
@@ -42,7 +45,7 @@ class clickhousy {
       # data from files without loading it into memory (which is stupid in our case)
 
       $cmd = 'curl -v -q ' . escapeshellarg($endpoint) .
-             ' -H "X-ClickHouse-Database: ' . self::$db . '" ' .
+             ' -H "X-ClickHouse-Database: ' . static::$db . '" ' .
              ' -H "Content-Encoding: gzip" ' .
              ' --data-binary @' . $post_buffer . ' 2>&1';
       $out = shell_exec($cmd);
@@ -58,7 +61,7 @@ class clickhousy {
 
     $c = curl_init($endpoint);
 
-    $request = self::prepare_request($progress_callback, $read_callback);
+    $request = static::prepare_request($sql, $progress_callback, $read_callback);
 
     curl_setopt_array($c, $request);
 
@@ -71,22 +74,24 @@ class clickhousy {
     
     $info = curl_getinfo($c);
     if ( $info['http_code'] != 200 ) {
-      return self::error($res, $info);
+      return static::error($res, $info);
     }
     else if ( isset($res) ) {
       $json = json_decode($res, true);
-      self::log($json, $info);
+      static::log($json, $info);
       return $json;
     }
   }
 
-  protected static function prepare_request($progress_callback, $read_callback) {
+  protected static function prepare_request($sql, $progress_callback, $read_callback) {
     $request = [
       CURLOPT_RETURNTRANSFER => 1,
+      CURLOPT_POST => 1,
+      CURLOPT_POSTFIELDS => $sql,
       CURLOPT_ENCODING => 'gzip',
       CURLOPT_HTTPHEADER => [
         'X-ClickHouse-Format: JSON',
-        'X-ClickHouse-Database: ' . self::$db,
+        'X-ClickHouse-Database: ' . static::$db,
         'Accept-Encoding: gzip'
       ],
       CURLOPT_HEADERFUNCTION => function($curl, $header) use ($progress_callback) {
@@ -96,7 +101,7 @@ class clickhousy {
         $header_name = substr($header, 0, $dots);
         
         if ( $header_name == 'X-ClickHouse-Summary' ) {
-          self::$last_summary = json_decode(substr($header, $dots + 1), true);
+          static::$last_summary = json_decode(substr($header, $dots + 1), true);
         }
         else if ( $header_name == 'X-ClickHouse-Progress' ) {
           $progress = json_decode(substr($header, $dots + 1), true);
@@ -149,20 +154,20 @@ class clickhousy {
   }
 
   public static function log($res, $info) {
-    self::$last_response = $res;
-    self::$last_info = $info;
+    static::$last_response = $res;
+    static::$last_info = $info;
   }
 
   public static function last_response() {
-    return self::$last_response;
+    return static::$last_response;
   }
 
   public static function last_info() {
-    return self::$last_info;
+    return static::$last_info;
   }
 
   public static function last_summary() {
-    return self::$last_summary;
+    return static::$last_summary;
   }
 
   
@@ -170,7 +175,7 @@ class clickhousy {
   /* Ready to use row/col data methods */
 
   public static function rows($sql, $params = []) {
-    $data = self::query($sql, $params);
+    $data = static::query($sql, $params);
     if ( !isset($data['data']) ) {
       return [];
     }
@@ -186,7 +191,7 @@ class clickhousy {
   }
 
   public static function cols($sql, $params = []) {
-    $rows = self::rows($sql, $params);
+    $rows = static::rows($sql, $params);
 
     if ( !$rows ) {
       return [];
@@ -201,12 +206,12 @@ class clickhousy {
   }
 
   public static function row($sql, $params = []) {
-    $rows = self::rows($sql, $params);
+    $rows = static::rows($sql, $params);
     return $rows ? $rows[0] : null;
   }
 
   public static function col($sql, $params = []) {
-    $row = self::row($sql, $params);
+    $row = static::row($sql, $params);
     return $row ? array_shift($row) : null;
   }
 
@@ -218,10 +223,10 @@ class clickhousy {
   public static function open_buffer($table) {
     if ( !isset($buffers[$table]) ) {
       $t = tempnam('/tmp', 'clickhousy-insert-buffer');
-      self::$buffers[$table] = $t;
+      static::$buffers[$table] = $t;
     }
 
-    return self::$buffers[$table];
+    return static::$buffers[$table];
   }
 
   public static function insert_buffer($bid, $data) {
@@ -234,8 +239,8 @@ class clickhousy {
 
   public static function flush_buffer($bid) {
     if ( is_file($bid) ) {
-      $table = array_search($bid, self::$buffers);
-      $data = self::query('INSERT INTO "' . $table . '" FORMAT TSV', [], $bid);
+      $table = array_search($bid, static::$buffers);
+      $data = static::query('INSERT INTO "' . $table . '" FORMAT TSV', [], $bid);
       unlink($bid);
 
       return $data;
