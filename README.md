@@ -1,6 +1,6 @@
 # Clickhousy (php lib)
 High performance Clickhouse PHP library featuring:
-- Tiny memory footprint based on static class (times better than [smi2 client]())
+- Tiny memory footprint based on static class (times better than [smi2 client](#memory-usage-and-performance))
 - Parametric queries (simple sql-injection protection).
 - Long queries progress update through callback function.
 - Huge datasets inserts without memory overflow.
@@ -294,7 +294,7 @@ class my_clickhousy extends clickhousy {
 
 
 ## Memory usage and performance
-Based on [performance testing](), `Clickhousy` lib is times faster
+Based on [performance testing](tests/smi2-test.php), `Clickhousy` lib is times faster
 and hundreds of times less memory consuming than [smi2 lib](https://github.com/smi2/phpClickHouse):
 
 ```
