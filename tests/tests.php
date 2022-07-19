@@ -102,6 +102,26 @@ class tests extends testy {
     self::assert('100000', clickhousy::last_summary()['total_rows_to_read'], 'Total read rows');
   }
 
+  public static function test_params() {
+    $count = clickhousy::col('SELECT count(*) FROM numbers(100000) WHERE number > {num:UInt32}', ['num' => 50000]);
+    self::assert('49999', $count, 'Int param test');
+
+    $val = clickhousy::col('SELECT lower(hex(MD5(toString(number)))) FROM numbers(100000) WHERE lower(hex(MD5(toString(number)))) = {val:String}', ['val' => md5(12345)]);
+    self::assert(md5(12345), $val, 'String param test');
+  }
+
+  public static function test_read_callback() {
+    $total = 0;
+    $sum = 0;
+    clickhousy::query('SELECT * FROM numbers(100000)', [], null, null, function($packet) use (&$total, &$sum) {
+      $total += count($packet);
+      foreach ( $packet as $r ) $sum += $r[0];
+    });
+    
+    self::assert(100000, $total, 'Total rows read through callback');
+    self::assert(clickhousy::col('SELECT sum(number) FROM numbers(100000)'), "{$sum}", 'Values read through callback');
+  }
+
   public static function test_insert_buffered() {
     $table_count_re = clickhousy::col('SELECT count(*) FROM _tests');
 

@@ -11,12 +11,16 @@ class clickhousy {
 
   /* Send query and process Clickhouse response */
 
-  public static function query($sql, $params = [], $post_buffer = null, $progress_callback = null, $output_tsv = null) {
+  public static function query($sql, $params = [], $post_buffer = null, $progress_callback = null, $read_callback = null) {
     $q = [
       'enable_http_compression' => 1,
       'send_progress_in_http_headers' => 1,
       'query' => $sql
     ];
+
+    foreach ( $params as $k => $v ) {
+      $q['param_' . $k] = $v;
+    }
 
     $endpoint = self::$url . '?' . http_build_query($q);
 
@@ -42,12 +46,35 @@ class clickhousy {
 
     $c = curl_init($endpoint);
 
+    $request = self::prepare_request($progress_callback, $read_callback);
+
+    curl_setopt_array($c, $request);
+
+    if ( $read_callback ) {
+      curl_exec($c);
+    }
+    else {
+      $res = curl_exec($c);
+    }
+    
+    $info = curl_getinfo($c);
+    if ( $info['http_code'] != 200 ) {
+      return self::error($res, $info);
+    }
+    else if ( isset($res) ) {
+      $json = json_decode($res, true);
+      self::log($json, $info);
+      return $json;
+    }
+  }
+
+  protected static function prepare_request($progress_callback, $read_callback) {
     $request = [
       CURLOPT_RETURNTRANSFER => 1,
       CURLOPT_ENCODING => 'gzip',
       CURLOPT_HTTPHEADER => [
-        'X-ClickHouse-Database: ' . self::$db,
         'X-ClickHouse-Format: JSON',
+        'X-ClickHouse-Database: ' . self::$db,
         'Accept-Encoding: gzip'
       ],
       CURLOPT_HEADERFUNCTION => function($curl, $header) use ($progress_callback) {
@@ -70,35 +97,35 @@ class clickhousy {
       }
     ];
 
-    if ( $output_tsv ) {
-      $request[CURLOPT_HTTPHEADER][1] = 'X-ClickHouse-Format: TSV';
-      $request[CURLOPT_FILE] = fopen($output_tsv, 'w');
+    if ( $read_callback ) {
+      $request[CURLOPT_HTTPHEADER][0] = 'X-ClickHouse-Format: TSV';
+      # $request[CURLOPT_FILE] = fopen($output_tsv, 'w');
 
-      /*$request[CURLOPT_WRITEFUNCTION] = function($c, $packet) use ($output_tsv) {
+      $request[CURLOPT_WRITEFUNCTION] = function($c, $packet) use ($read_callback) {
+        static $part = '';
+
         $len = strlen($packet);
-        file_put_contents($output_tsv, $packet, FILE_APPEND);
+        $last_char = $packet[$len - 1];
+        $lines = explode("\n", $part . $packet);
+
+        if ( $last_char == "\n" ) {
+          array_pop($lines);
+          $part = '';
+        }
+        else {
+          $part = array_pop($lines);
+        }
+
+        $tsv = [];
+        foreach ( $lines as $row ) {
+          $tsv[] = explode("\t", $row);
+        }
+        $read_callback($tsv);
         return $len;
-      };*/
+      };
     }
 
-    curl_setopt_array($c, $request);
-
-    if ( $output_tsv ) {
-      curl_exec($c);
-    }
-    else {
-      $res = curl_exec($c);
-    }
-    
-    $info = curl_getinfo($c);
-    if ( $info['http_code'] != 200 ) {
-      return self::error($res, $info);
-    }
-    else if ( isset($res) ) {
-      $json = json_decode($res, true);
-      self::log($json, $info);
-      return $json;
-    }
+    return $request;
   }
 
 
@@ -131,7 +158,12 @@ class clickhousy {
   /* Ready to use row/col data methods */
 
   public static function rows($sql, $params = []) {
-    $data = self::query($sql, $params)['data'];
+    $data = self::query($sql, $params);
+    if ( !isset($data['data']) ) {
+      return [];
+    }
+
+    $data = $data['data'];
     $rows = [];
 
     foreach ( $data as $r ) {
