@@ -136,7 +136,7 @@ class tests extends testy {
     clickhousy::insert_buffer($b, $rows);
     $insert = clickhousy::flush_buffer($b);
     $table_count_post = clickhousy::col('SELECT count(*) FROM _tests');
-
+    print_r(clickhousy::query('SELECT * FROM numbers(2)'));
     self::assert(count($rows), intval($insert['written_rows']), 'Inserts reported');
     self::assert(intval($table_count_post), $table_count_re + count($rows), 'Inserted actually');
   }
@@ -144,6 +144,7 @@ class tests extends testy {
   public static function test_progress() {
     $history = [];
     $res = clickhousy::query('SELECT count(*) FROM (SELECT * FROM numbers(50000000) ORDER BY RAND())', [], null, function($progress) use (&$history) {
+      echo round(100 * $progress['read_rows']/$progress['total_rows_to_read']) . '%' . "\n";
       $history[] = $progress;
     });
 

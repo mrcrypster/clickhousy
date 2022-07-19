@@ -15,6 +15,10 @@ class clickhousy {
     self::$url = $url;
   }
 
+  public static function set_db($db) {
+    self::$db = $db;
+  }
+
 
 
   /* Send query and process Clickhouse response */
