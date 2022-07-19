@@ -9,6 +9,14 @@ class clickhousy {
 
 
 
+  /* Settings */
+
+  public static function set_url($url) {
+    self::$url = $url;
+  }
+
+
+
   /* Send query and process Clickhouse response */
 
   public static function query($sql, $params = [], $post_buffer = null, $progress_callback = null, $read_callback = null) {
