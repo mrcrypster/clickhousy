@@ -8,6 +8,14 @@ clickhousy::query('DROP TABLE _tests');
 clickhousy::query('CREATE TABLE _tests (a String) ENGINE = MergeTree ORDER BY a');
 
 
+class my_clickhousy_exception extends Exception {};
+class my_clickhousy extends clickhousy {
+  public static function error($msg, $request_info) {
+    throw new my_clickhousy_exception($msg);
+  }
+}
+
+
 class tests extends testy {
   public static function test_ping() {
     self::assert(
@@ -15,6 +23,18 @@ class tests extends testy {
       clickhousy::col('SELECT NOW()'),
       'Ping health'
     );
+  }
+
+  public static function test_custom_exceptions() {
+    $error = false;
+    try {
+      my_clickhousy::query('SELECT bad_query');
+    }
+    catch ( my_clickhousy_exception $e ) {
+      $error = true;
+    }
+
+    self::assert(true, $error, 'Raised exception');
   }
 
   public static function test_rows() {
@@ -136,7 +156,6 @@ class tests extends testy {
     clickhousy::insert_buffer($b, $rows);
     $insert = clickhousy::flush_buffer($b);
     $table_count_post = clickhousy::col('SELECT count(*) FROM _tests');
-    print_r(clickhousy::query('SELECT * FROM numbers(2)'));
     self::assert(count($rows), intval($insert['written_rows']), 'Inserts reported');
     self::assert(intval($table_count_post), $table_count_re + count($rows), 'Inserted actually');
   }
