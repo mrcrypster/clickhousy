@@ -1,9 +1,11 @@
 # Clickhousy (php lib)
 High performance Clickhouse PHP library featuring:
 - Tiny memory footprint based on static class (times better than [smi2 client](#memory-usage-and-performance))
+- High level methods to fetch rows, single row, array of scalar values of single value.
 - Parametric queries (simple sql-injection protection).
 - Long queries progress update through callback function.
-- Huge datasets inserts without memory overflow.
+- Large resultsets "step-by-step" reading/processing without memory overflow.
+- Large datasets inserts without memory overflow.
 - HTTP compression for traffic reduction.
 - Curl based (shell curl command required for large inserts).
 
