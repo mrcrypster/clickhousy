@@ -1,12 +1,13 @@
 # Clickhousy (php lib)
 High performance Clickhouse PHP library featuring:
 - Tiny memory footprint based on static class (times better than [smi2 client](#memory-usage-and-performance))
-- High level methods to fetch rows, single row, array of scalar values of single value.
-- Parametric queries (simple sql-injection protection).
+- High level methods to fetch rows, single row, array of scalar values or single value.
+- Parametric queries (native Clickhouse sql-injection protection).
 - Long queries progress update through callback function.
 - Large resultsets "step-by-step" reading/processing without memory overflow.
 - Large datasets inserts without memory overflow.
-- HTTP compression for traffic reduction.
+- Custom logging and error handling.
+- HTTP native compression for traffic reduction.
 - Curl based (shell curl command required for large inserts).
 
 
@@ -21,40 +22,41 @@ Import lib and use it:
 
 ```php
 require 'clickhousy/clickhousy.php';
-$data = clickhousy::rows('SELECT count(*) FROM table');
+$data = clickhousy::rows('SELECT * FROM table LIMIT 5');
 ```
 
 
-## Set connection & database
-`Clickhousy` works over [Clickhouse HTTP protocol](https://clickhouse.com/docs/en/interfaces/http/), so you just need to set connection url:
+## Connection & database
+`Clickhousy` works over [Clickhouse HTTP protocol](https://clickhouse.com/docs/en/interfaces/http/), so you just need to set connection url (by default it's `localhost:8123`):
 ```php
 clickhousy::set_url('http://host:port/'); # no auth
 clickhousy::set_url('http://user:password@host:port/'); # auth
 ```
 
-And then select database (which is `default` by default):
+And then select database (`default` by default):
 ```php
 clickhousy::set_db('my_db');
 ```
 
 
 ## Data fetch
-You can use 4 predefined functions to quickly fetch needed data:
+Use predefined methods to quickly fetch needed data:
 ```php
-clickhousy::rows('SELECT * FROM table');        # -> returns array or associative arrays
-clickhousy::row('SELECT * FROM table LIMIT 1'); # -> returns single row associative array
-clickhousy::cols('SELECT id FROM table');       # -> returns array of scalar values
-clickhousy::col('SELECT count(*) FROM table');  # -> returns single scalar value
+clickhousy::rows('SELECT * FROM table');         # -> returns array or associative arrays
+clickhousy::row ('SELECT * FROM table LIMIT 1'); # -> returns single row associative array
+clickhousy::cols('SELECT id FROM table');        # -> returns array of scalar values
+clickhousy::col ('SELECT count(*) FROM table');  # -> returns single scalar value
 ```
 
 
 ## Reading large datasets
-If your query returns many rows, you should use reading callback in order no to run out of memory:
+If your query returns many rows, use reading callback in order not to run out of memory:
 ```php
 clickhousy::query('SELECT * FROM large_table', [], null, null, function($packet) {
   // $packet will contain small portion of returning data
   foreach ( $packet as $row ) {
     // do something with $row (array of each result row values)
+    print_r($row) # [0 => 'col1 value', 1 => 'col2 value', ...]
   }
 });
 ```
@@ -72,7 +74,7 @@ $count = clickhousy::col(
 
 
 ## Writing data
-Though writing also happens somewhere else (not on PHP side), `Clickhousy` has shell `curl` wrapper to write massive datasets to Clickhouse:
+Though writing usually happens somewhere else (not on PHP side), `Clickhousy` has shell `curl` wrapper to write massive datasets to Clickhouse. To save memory, this is done through "write buffers" (temp files on disk), which can be as large as your disk allows it to be:
 
 ```php
 $b = clickhousy::open_buffer('table');  # open insert buffer to insert data into "table" table
@@ -82,7 +84,7 @@ for ( $k = 0; $k < 100; $k++ ) {        # repeat generation 100 times
   $rows = [];
 
   for ( $i = 0; $i < 1000000; $i++ ) {
-    $rows[] = [md5($i)];                # generate 1 million rows 
+    $rows[] = [md5($i)];                # generate 1 million rows in single iteration
   }
 
   clickhousy::insert_buffer($b, $rows); # insert generated 1 million rows into buffer
@@ -105,7 +107,7 @@ Array
 
 
 ## Custom queries
-Generic `query` method is available for any query execution:
+Generic `query` method is available for any read or write query:
 ```php
 clickhousy::query('INSERT INTO table(id) VALUES(1)');
 clickhousy::query('TRUNCATE TABLE table');
@@ -138,12 +140,7 @@ Array
                 (
                     [number] => 0
                 )
-
-            [1] => Array
-                (
-                    [number] => 1
-                )
-
+            ...
         )
 
     [rows] => 2
@@ -170,13 +167,13 @@ You can insert data from files using `$post_buffer` argument pointing to a file:
 $res = clickhousy::query('INSERT INTO table', [], '/path/to/tsv.gz');
 ```
 
-File should be gzipped TSV.
+File should be of gzipped TSV format.
 
 
 ## Long query progress tracking
-`$progress_callback` allows specifying callback function which will be called on query execution progress change:
+`$progress_callback` allows specifying callback function which will be called when query execution progress updates:
 ```php
-clickhousy::query('SELECT count(*) FROM large_table WHERE heavy_condition', [], null, function($progress) {
+clickhousy::query('SELECT uniq(id) FROM huge_table', [], null, function($progress) {
   print_r($progress);
 });
 ```
@@ -201,7 +198,7 @@ Array
 )
 ```
 
-You can calculate and print query execution progress like that:
+It's easy to calculate and print query execution progress:
 ```php
 clickhousy::query('SELECT count(*) FROM large_table WHERE heavy_condition', [], null, function($progress) {
   echo round(100 * $progress['read_rows']/$progress['total_rows_to_read']) . '%' . "\n";
@@ -255,7 +252,7 @@ Array
 )
 ```
 
-If you want exceptions functionality, you can inherit your own class and override `error()` method:
+If you want exceptions functionality, you can extend `clickhousy` with your own class and override `error()` method:
 ```php
 class my_clickhousy_exception extends Exception {};
 class my_clickhousy extends clickhousy {
@@ -265,7 +262,7 @@ class my_clickhousy extends clickhousy {
 }
 ```
 
-And just use your own class:
+Then use your own class to get exceptions working:
 ```php
 my_clickhousy::query('SELECT bad_query');   # bad query example
 # PHP Fatal error:  Uncaught my_clickhousy_exception: Code: 47. DB::Exception: Missing columns: 'bad_query' ...
@@ -278,7 +275,7 @@ If you need to access raw response from Clickhouse, you can find it here:
 clickhouse::last_response();  # raw text response from Clickhouse after latest query
 ```
 
-Curl (which is used for HTTP communication) resposne info can be accessed via:
+Curl (which is used for HTTP communication) response info can be accessed via:
 ```php
 clickhouse::last_info();  # response from curl_getinfo() after latest query
 ```
