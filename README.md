@@ -1,4 +1,4 @@
-# Clickhousy (php lib)
+# Clickhousy - Clickhouse php lib
 High performance Clickhouse PHP library featuring:
 - Tiny memory footprint based on static class (times better than [smi2 client](#memory-usage-and-performance))
 - High level methods to fetch rows, single row, array of scalar values or single value.
