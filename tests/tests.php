@@ -142,22 +142,30 @@ class tests extends testy {
     self::assert(clickhousy::col('SELECT sum(number) FROM numbers(100000)'), "{$sum}", 'Values read through callback');
   }
 
-  public static function test_insert_buffered() {
-    $table_count_re = clickhousy::col('SELECT count(*) FROM _tests');
-
-    $b = clickhousy::open_buffer('_tests');
-    $rows = [];
-    for ( $k = 0; $k < 100; $k++ ) {
-      for ( $i = 0; $i < 100; $i++ ) {
-        $rows[] = [md5($i)];
-      }
+  public static function test_write() {
+    # unnamed rows
+    $data = [];
+    for ( $i = 1; $i <= 1000; $i++ ) {
+      $data[] = [$i, date('Y-m-d H:i:s', time() - $i)];
     }
+    clickhousy::query('DROP TABLE IF EXISTS test');
+    clickhousy::query('CREATE TABLE test (id UInt32, dt DateTime) Engine = MergeTree ORDER BY id');
+    $res = clickhousy::insert('test', $data);
+    self::assert(null, $res, 'Inserted unnamed rows');
+    $rows = clickhousy::rows('SELECT * FROM test');
+    self::assert(1000, count($rows), 'Fetched inserted rows');
 
-    clickhousy::insert_buffer($b, $rows);
-    $insert = clickhousy::flush_buffer($b);
-    $table_count_post = clickhousy::col('SELECT count(*) FROM _tests');
-    self::assert(count($rows), intval($insert['written_rows']), 'Inserts reported');
-    self::assert(intval($table_count_post), $table_count_re + count($rows), 'Inserted actually');
+    # named rows
+    $data = [];
+    for ( $i = 1; $i <= 1000; $i++ ) {
+      $data[] = ['dt' => date('Y-m-d H:i:s', time() - $i), 'id' => $i];
+    }
+    clickhousy::query('DROP TABLE IF EXISTS test');
+    clickhousy::query('CREATE TABLE test (id UInt32, dt DateTime) Engine = MergeTree ORDER BY id');
+    $res = clickhousy::insert('test', $data);
+    self::assert(null, $res, 'Inserted named rows');
+    $rows = clickhousy::rows('SELECT * FROM test');
+    self::assert(1000, count($rows), 'Fetched inserted rows');
   }
 
   public static function test_progress() {
