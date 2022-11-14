@@ -23,45 +23,25 @@ class clickhousy {
 
   /* Send query and process Clickhouse response */
 
-  public static function query($sql, $params = [], $post_buffer = null, $progress_callback = null, $read_callback = null) {
+  public static function query($sql, $params = [], $post_data = null, $progress_callback = null, $read_callback = null) {
     $q = [
       'enable_http_compression' => 1,
       'send_progress_in_http_headers' => 1,
     ];
 
-    if ( $post_buffer ) {
-      $q['query'] = $sql;
-    }
-
     foreach ( $params as $k => $v ) {
       $q['param_' . $k] = $v;
     }
 
-    $endpoint = static::$url . '?' . http_build_query($q);
-
-
-    if ( $post_buffer ) {
-      # unfortunately, we have to call shell curl, cause PHP can't send binary
-      # data from files without loading it into memory (which is stupid in our case)
-
-      $cmd = 'curl -v -q ' . escapeshellarg($endpoint) .
-             ' -H "X-ClickHouse-Database: ' . static::$db . '" ' .
-             ' -H "Content-Encoding: gzip" ' .
-             ' --data-binary @' . $post_buffer . ' 2>&1';
-      $out = shell_exec($cmd);
-      if ( preg_match('/X-ClickHouse-Summary: (.+?)\\n/misu', $out, $m) ) {
-        return json_decode($m[1], 1);
-      }
-      else {
-        # looks like error
-        echo 'ERROR: ' . $out;
-      }
+    if ( $post_data ) {
+      $q['query'] = $sql;
     }
 
+    $endpoint = static::$url . '?' . http_build_query($q);
 
     $c = curl_init($endpoint);
 
-    $request = static::prepare_request($sql, $progress_callback, $read_callback);
+    $request = static::prepare_request($sql, $post_data, $progress_callback, $read_callback);
 
     curl_setopt_array($c, $request);
 
@@ -83,14 +63,14 @@ class clickhousy {
     }
   }
 
-  protected static function prepare_request($sql, $progress_callback, $read_callback) {
+  protected static function prepare_request($sql, $post_data, $progress_callback, $read_callback) {
     $request = [
       CURLOPT_RETURNTRANSFER => 1,
       CURLOPT_POST => 1,
-      CURLOPT_POSTFIELDS => $sql,
+      CURLOPT_POSTFIELDS => $post_data ?: $sql,
       CURLOPT_ENCODING => 'gzip',
       CURLOPT_HTTPHEADER => [
-        'X-ClickHouse-Format: JSON',
+        'X-ClickHouse-Format: ' . ($post_data ? 'TSV' : 'JSON'),
         'X-ClickHouse-Database: ' . static::$db,
         'Accept-Encoding: gzip'
       ],
@@ -219,31 +199,22 @@ class clickhousy {
 
   /* Writes */
 
-  private static $buffers = [];
-  public static function open_buffer($table) {
-    if ( !isset($buffers[$table]) ) {
-      $t = tempnam('/tmp', 'clickhousy-insert-buffer');
-      static::$buffers[$table] = $t;
+  public static function insert($table, $rows) {
+    $insert = [];
+
+    $cols = [];
+    if ( !is_numeric(key($rows[0])) ) {
+      foreach ( array_keys($rows[0]) as $k ) {
+        $cols[] = '"' . str_replace('"', '\\"', $k) . '"';
+      }
+    }
+    
+    foreach ( $rows as $row ) {
+      $insert[] = implode("\t", array_values($row));
     }
 
-    return static::$buffers[$table];
-  }
-
-  public static function insert_buffer($bid, $data) {
-    $f = gzopen($bid, 'a');
-    foreach ( $data as $row ) {
-      fputcsv($f, $row);
-    }
-    fclose($f);
-  }
-
-  public static function flush_buffer($bid) {
-    if ( is_file($bid) ) {
-      $table = array_search($bid, static::$buffers);
-      $data = static::query('INSERT INTO "' . $table . '" FORMAT TSV', [], $bid);
-      unlink($bid);
-
-      return $data;
-    }
+    return self::query('INSERT INTO ' . $table .
+                       ($cols ? '(' . implode(',', $cols) . ')' : '') .
+                       ' FORMAT TSV', [], implode("\n", $insert));
   }
 }

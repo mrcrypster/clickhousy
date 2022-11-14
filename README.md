@@ -4,11 +4,11 @@ High performance Clickhouse PHP library featuring:
 - High level methods to fetch rows, single row, array of scalar values or single value.
 - Parametric queries (native Clickhouse sql-injection protection).
 - Long queries progress update through callback function.
-- Large resultsets "step-by-step" reading/processing without memory overflow.
-- Large datasets inserts without memory overflow.
+- Large result sets "step-by-step" reading/processing without memory overflow.
 - Custom logging and error handling.
 - HTTP native compression for traffic reduction.
-- Curl based (shell curl command required for large inserts).
+- Batch data writing.
+- Curl library based.
 
 
 ## Quick start
@@ -74,35 +74,43 @@ $count = clickhousy::col(
 
 
 ## Writing data
-Though writing usually happens somewhere else (not on PHP side), `Clickhousy` has shell `curl` wrapper to write massive datasets to Clickhouse. To save memory, this is done through "write buffers" (temp files on disk), which can be as large as your disk allows it to be:
+It's not a good idea to insert large amounts of data into Clickhouse using single row inserts.
+Consider using other technologies, like Kafka to ingest data into Clockhouse efficiently.
+Avoid using client-library inserts in production environments.
 
+With Clickhousy you can insert either named rows:
 ```php
-$b = clickhousy::open_buffer('table');  # open insert buffer to insert data into "table" table
-                                        # buffer is a tmp file on disk, so no memory leaks
+clickhousy::insert('my_table', [
+    ['id' => 1, 'date' => date('Y-m-d')],
+    ['id' => 2, 'date' => date('Y-m-d')]
+]);
+```
 
-for ( $k = 0; $k < 100; $k++ ) {        # repeat generation 100 times
-  $rows = [];
+Or unnamed rows (in this case, make sure that values order is the same as table columns order):
+```php
+clickhousy::insert('my_table', [
+    [1, date('Y-m-d')],
+    [2, date('Y-m-d')]
+]);
+```
 
-  for ( $i = 0; $i < 1000000; $i++ ) {
-    $rows[] = [md5($i)];                # generate 1 million rows in single iteration
-  }
-
-  clickhousy::insert_buffer($b, $rows); # insert generated 1 million rows into buffer
+### Inserting large datasets
+If you still need (which you should avoid please) to insert large amounts of data using Clickhousy,
+do it in batches of at least couple of thousands rows (but be sure to monitor RAM usage by PHP):
+```php
+$f = fopen('large.csv', 'r');
+$batch = [];
+while ( $row = fgetcsv($f) ) {
+    $batch[] = $row;
+    if ( count($batch) >= 5000 ) {
+        clickhousy::insert('my_table', $batch);
+        $batch = [];
+    }
 }
 
-$result = clickhousy::flush_buffer($b); # sends buffer (100m rows) content to Clickhouse
-```
-
-After insert is executed, `$result` variable gets summary from Clickhouse:
-```
-Array
-(
-    [read_rows] => 10000
-    [read_bytes] => 410000
-    [written_rows] => 10000
-    [written_bytes] => 410000
-    [total_rows_to_read] => 0
-)
+if ( $batch ) {
+    clickhousy::insert('my_table', $batch);
+}
 ```
 
 
