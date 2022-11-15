@@ -1,7 +1,7 @@
 <?php
 
 class clickhousy {
-  protected static $url = 'http://localhost:8123';
+  protected static $url = isset($_ENV['clickhouse']) ? $_ENV['clickhouse'] : 'http://localhost:8123';
   protected static $db = 'default';
   protected static $last_response = [];
   protected static $last_info = [];
