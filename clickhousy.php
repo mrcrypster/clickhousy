@@ -210,6 +210,7 @@ class clickhousy {
     }
     
     foreach ( $rows as $row ) {
+      $row = array_map(function($v) { return str_replace('"', '\\"', $v); }, $row);
       $insert[] = implode("\t", array_values($row));
     }
 
